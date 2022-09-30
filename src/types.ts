@@ -1,2 +1,4 @@
-export type MainChannels = "dialog:openDirectory" | "show-context-menu";
-export type RendererChannels = "context-menu-command";
+import { ContextMenuCommand, OpenDirectory, ShowContextMenu } from "./constants";
+
+export type MainChannels = typeof OpenDirectory | typeof ShowContextMenu;
+export type RendererChannels = typeof ContextMenuCommand;

@@ -1,5 +1,6 @@
 import { IpcRendererEvent } from "electron";
 import * as React from "react";
+import { ContextMenuCommand, ShowContextMenu } from "../constants";
 import { useIpcRenderer } from "./useIpcRenderer";
 
 export const App = () => {
@@ -8,12 +9,12 @@ export const App = () => {
 	React.useEffect(() => {
 		window.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
-			ipcRenderer.send("show-context-menu");
+			ipcRenderer.send(ShowContextMenu);
 		});
 	}, []);
 	React.useEffect(() => {
-		return ipcRenderer.on("context-menu-command", (e : IpcRendererEvent, command : string) => {
-			console.log(e, command);
+		return ipcRenderer.on(ContextMenuCommand, (command : string) => {
+			console.log(command);
 		});
 	}, []);
 	const getRepository = React.useCallback(async () => {

@@ -1,6 +1,7 @@
-import type { IpcRenderer, IpcRendererEvent } from "electron";
+import type { IpcRenderer } from "electron";
 import * as React from "react";
 import { MainChannels, RendererChannels } from "../types";
+import { OpenDirectory } from "../constants";
 
 declare let ipcRenderer : IpcRenderer;
 declare let versions : {
@@ -21,7 +22,7 @@ export const useIpcRenderer = () => {
 	const invoke = React.useCallback((name : MainChannels, ...args : unknown[]) => { // connects to `handle`
 		return ipcRenderer.invoke(name, args);
 	}, []);
-	const getRepository = (folder : string) => invoke("dialog:openDirectory", folder);
+	const getRepository = (folder : string) => invoke(OpenDirectory, folder);
 	return {
 		send,
 		on,
