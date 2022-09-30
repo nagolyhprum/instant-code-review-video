@@ -26,7 +26,6 @@ app.whenReady().then(() => {
 			const mb = new MenuBuilder(createWindow());
 			mb.buildMenu();
 		}
-		console.log("activated");
 	});
 });
 
@@ -37,8 +36,7 @@ app.on("window-all-closed", () => {
 	}
 });
 
-
-ipcMain.handle("show-context-menu", (event) => {
+ipcMain.on("show-context-menu", (event) => {
 	const template = [
 		{
 			label: "Menu Item 1",

@@ -13,9 +13,9 @@ const shared : Configuration = {
 			exclude: /node_modules/,
 		}],
 	},
-	resolve: {
-		extensions: [".ts", ".tsx"],
-	},
+	resolve :{ 
+		extensions: [".ts", ".tsx"]
+	}
 };
 
 const config : Array<Configuration> = [{
@@ -40,7 +40,7 @@ const config : Array<Configuration> = [{
 	...shared,
 	mode: "production",
 	entry: "./src/renderer/index.tsx",
-	target: ["web", "electron-renderer"],
+	target: ["electron-renderer"],
 	output: {
 		filename: "index.js",
 		path: path.resolve(__dirname, "dist", "renderer"),
