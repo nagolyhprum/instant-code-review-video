@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, dialog } from "electron";
 import path from "path";
 import Html from "./index.html";
 import "./menu";
@@ -12,6 +12,13 @@ const createWindow = () => {
 		webPreferences: {
 			preload: path.join(__dirname, "../preload/index.js"),
 		}
+	});
+	ipcMain.handle("dialog:openDirectory", async (_, path : string) => {
+		const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+			properties: ["openDirectory"], 
+			defaultPath: path,			
+		});
+		return filePaths[0] || path;
 	});
 	mainWindow.loadFile(path.join(__dirname, Html));
 	mainWindow.webContents.openDevTools();

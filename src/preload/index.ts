@@ -1,27 +1,22 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
+import { RendererChannels, MainChannels } from "../types";
 
 contextBridge.exposeInMainWorld("versions", {
-	node: () => process.versions.node,
-	chrome: () => process.versions.chrome,
-	electron: () => process.versions.electron,
+	node: process.versions.node,
+	chrome: process.versions.chrome,
+	electron: process.versions.electron,
 });
 
-export type Channels = "ipc-example";
-
 contextBridge.exposeInMainWorld("ipcRenderer", {
-	send(channel: Channels, args: unknown[]) {
-		ipcRenderer.send(channel, args);
+	invoke(channel: MainChannels, args: unknown[]) {
+		return ipcRenderer.invoke(channel, ...args);
 	},
-	on(channel: Channels, func: (...args: unknown[]) => void) {
-		const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
-			func(...args);
+	send(channel: MainChannels, args: unknown[]) {
+		ipcRenderer.send(channel, ...args);
+	},
+	on(channel: RendererChannels, func: (...args: unknown[]) => void) {
+		const subscription = (_: IpcRendererEvent, ...args: unknown[]) => func(...args);
 		ipcRenderer.on(channel, subscription);
-
-		return () => {
-			ipcRenderer.removeListener(channel, subscription);
-		};
-	},
-	once(channel: Channels, func: (...args: unknown[]) => void) {
-		ipcRenderer.once(channel, (_event, ...args) => func(...args));
+		return () => ipcRenderer.removeListener(channel, subscription);
 	},
 });
