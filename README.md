@@ -5,7 +5,7 @@ Generate a video from a git diff that looks like you are editing the code in rea
 Code reviews can be boring. There is no way to know what order the coder made the changes or their reasoning for doing so. That is the problem this tool will solve.
 
 ### MVP
-* User can choose a local repository
+* ~~User can choose a local repository~~
 * User can choose a branch (not main)
 * The tool will auto generate the steps to make those changes
 * The user can show the results at each step

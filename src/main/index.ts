@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, dialog } from "electron";
 import path from "path";
+import { ContextMenuCommand, OpenDirectory, ShowContextMenu } from "../constants";
 import Html from "./index.html";
 import "./menu";
 import MenuBuilder from "./menu";
@@ -12,6 +13,13 @@ const createWindow = () => {
 		webPreferences: {
 			preload: path.join(__dirname, "../preload/index.js"),
 		}
+	});
+	ipcMain.handle(OpenDirectory, async (_, path : string) => {
+		const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+			properties: ["openDirectory"], 
+			defaultPath: path,			
+		});
+		return filePaths[0] || path;
 	});
 	mainWindow.loadFile(path.join(__dirname, Html));
 	mainWindow.webContents.openDevTools();
@@ -36,11 +44,11 @@ app.on("window-all-closed", () => {
 	}
 });
 
-ipcMain.on("show-context-menu", (event) => {
+ipcMain.on(ShowContextMenu, (event) => {
 	const template = [
 		{
 			label: "Menu Item 1",
-			click: () => { event.sender.send("context-menu-command", "menu-item-1"); }
+			click: () => { event.sender.send(ContextMenuCommand, "menu-item-1"); }
 		},
 		{ type: "separator" },
 		{ label: "Menu Item 2", type: "checkbox", checked: true }
