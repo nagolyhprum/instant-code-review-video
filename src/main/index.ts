@@ -1,9 +1,39 @@
 import { app, BrowserWindow, Menu, ipcMain, dialog } from "electron";
 import path from "path";
-import { ContextMenuCommand, OpenDirectory, ShowContextMenu } from "../constants";
+import { ContextMenuCommand, GetBranches, OpenDirectory, ShowContextMenu } from "../constants";
 import Html from "./index.html";
 import "./menu";
 import MenuBuilder from "./menu";
+import child_process from "child_process";
+
+const git = (path : string, ...commands : string[]) => {
+	return new Promise<string>((resolve, reject) => child_process.exec(`git ${commands.join(" ")}`, {
+		cwd : path,
+	}, (error, stdout) => {
+		if(error) reject(error);
+		else resolve(stdout);
+	}));
+};
+
+const getMainBranch = async (path : string) : Promise<string> => {
+	const result = await git(path, "rev-parse", "--abbrev-ref", "origin/HEAD");
+	return result.split("/").at(-1).trim();
+};
+
+const removeStarRegexp = /^\*/;
+const getBranches = async (path : string) : Promise<string[]> => {
+	if(path) {
+		try {
+			const main = await getMainBranch(path);
+			console.log(main);
+			const result = await git(path, "branch");
+			return result.split(/\s+/).filter(_ => _ !== main && _.replace(removeStarRegexp, ""));
+		} catch(e) {
+			// DO NOTHING
+		}
+	}
+	return [];
+};
 
 const createWindow = () => {
 	const mainWindow = new BrowserWindow({
@@ -20,6 +50,9 @@ const createWindow = () => {
 			defaultPath: path,			
 		});
 		return filePaths[0] || path;
+	});
+	ipcMain.handle(GetBranches, async (_, path : string) => {		
+		return getBranches(path);
 	});
 	mainWindow.loadFile(path.join(__dirname, Html));
 	mainWindow.webContents.openDevTools();

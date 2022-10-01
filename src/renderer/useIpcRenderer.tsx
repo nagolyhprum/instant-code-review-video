@@ -1,7 +1,7 @@
-import type { IpcRenderer } from "electron";
+import { IpcRenderer } from "electron";
 import * as React from "react";
 import { MainChannels, RendererChannels } from "../types";
-import { OpenDirectory } from "../constants";
+import { GetBranches, OpenDirectory } from "../constants";
 
 declare let ipcRenderer : IpcRenderer;
 declare let versions : {
@@ -23,10 +23,12 @@ export const useIpcRenderer = () => {
 		return ipcRenderer.invoke(name, args);
 	}, []);
 	const getRepository = (folder : string) => invoke(OpenDirectory, folder);
+	const getBranches = (folder : string) => invoke(GetBranches, folder);
 	return {
 		send,
 		on,
 		invoke,
-		getRepository
+		getRepository,
+		getBranches
 	};
 };
