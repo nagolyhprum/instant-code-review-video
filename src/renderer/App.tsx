@@ -1,15 +1,7 @@
 import * as React from "react";
+import { CanvasText, FileChange } from "../types";
 import { ContextMenuCommand, ShowContextMenu } from "../constants";
 import { useIpcRenderer } from "./useIpcRenderer";
-
-interface CanvasText {
-	x : number
-	y : number
-	width : number
-	height : number
-	character : string
-	color : string
-}
 
 const tokenRegexp = /(\s*)(\S+)/g;
 const position = (input : string, context : CanvasRenderingContext2D) => {
@@ -56,12 +48,12 @@ export const App = () => {
 	// custom hooks
 	const ipcRenderer = useIpcRenderer();
 	// state
+	const [fileChanges, setFileChanges] = React.useState<FileChange[]>([]);
+	const [branches, setBranches] = React.useState<string[]>([]);
+	// settings
 	const [folder, setFolder] = React.useState("");
-	const [branches, setBranches] = React.useState([]);
-	const [branch, setBranch] = React.useState("main");
-	const [code, setCode] = React.useState(() => Array.from({
-		length : 5
-	}).map((_, index) => `var ${String.fromCharCode("a".charCodeAt(0) + index)} = ${index};`).join("\n"));
+	const [branch, setBranch] = React.useState("");
+	const [fileChange, setFileChange] = React.useState("");
 	// refs
 	const canvas = React.useRef<HTMLCanvasElement>(null);
 	// effects
@@ -74,6 +66,14 @@ export const App = () => {
 		callback();
 	}, [folder]);
 	React.useEffect(() => {
+		const callback = async () => {
+			const fileChanges = await ipcRenderer.getFileChanges(folder, branch);
+			setFileChanges(fileChanges);
+			setFileChange(fileChanges[0] ? fileChanges[0].path : "");
+		};
+		callback();
+	}, [branch]);
+	React.useEffect(() => {
 		window.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
 			ipcRenderer.send(ShowContextMenu);
@@ -85,20 +85,30 @@ export const App = () => {
 		});
 	}, []);
 	React.useEffect(() => {
+		const fileChangeItem = fileChanges.find(it => it.path === fileChange);
+		const code = fileChangeItem ? `<<<<<<<<<<<<<<<<<<<<<<<<<<<< main
+${fileChangeItem.original}
+============================
+${fileChangeItem.modified}
+>>>>>>>>>>>>>>>>>>>>>>>>>>>> ${branch}` : "";
 		const context = canvas.current.getContext("2d");
-		context.font = "24px Courier New";
+		context.font = "16px Courier New";
 		const characters = position(code, context);
-		const last = characters[characters.length - 1];
-		canvas.current.width = last.x + last.width;
-		canvas.current.height = last.y + last.height;
-		context.font = "24px Courier New";
-		context.textAlign = "left";
-		context.textBaseline = "top";
-		characters.forEach(character => {
-			context.fillStyle = character.color;
-			context.fillText(character.character, character.x, character.y);
-		});
-	}, [code]);
+		if(characters.length) {
+			const last = characters.at(-1);
+			canvas.current.width = characters.reduce((max, character) => {
+				return Math.max(max, character.x + character.width);
+			}, 0);
+			canvas.current.height = last.y + last.height;
+			context.font = "16px Courier New";
+			context.textAlign = "left";
+			context.textBaseline = "top";
+			characters.forEach(character => {
+				context.fillStyle = character.color;
+				context.fillText(character.character, character.x, character.y);
+			});
+		}
+	}, [fileChange]);
 	// callbacks
 	const getRepository = React.useCallback(async () => {
 		setFolder(await ipcRenderer.getRepository(folder));
@@ -116,6 +126,11 @@ export const App = () => {
 			<select value={branch} onChange={event => setBranch(event.target.value)}>
 				{branches.map(branch => (
 					<option key={branch}>{branch}</option>
+				))}
+			</select>
+			<select value={fileChange} onChange={event => setFileChange(event.target.value)}>
+				{fileChanges.map(fileChange => (
+					<option key={fileChange.path}>{fileChange.path}</option>
 				))}
 			</select>
 			<canvas ref={canvas}></canvas>

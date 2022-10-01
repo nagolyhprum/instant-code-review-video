@@ -1,7 +1,7 @@
 import { IpcRenderer } from "electron";
 import * as React from "react";
-import { MainChannels, RendererChannels } from "../types";
-import { GetBranches, OpenDirectory } from "../constants";
+import { FileChange, MainChannels, RendererChannels } from "../types";
+import { GetBranches, GetFileChanges, OpenDirectory } from "../constants";
 
 declare let ipcRenderer : IpcRenderer;
 declare let versions : {
@@ -22,13 +22,15 @@ export const useIpcRenderer = () => {
 	const invoke = React.useCallback((name : MainChannels, ...args : unknown[]) => { // connects to `handle`
 		return ipcRenderer.invoke(name, args);
 	}, []);
-	const getRepository = (folder : string) => invoke(OpenDirectory, folder);
-	const getBranches = (folder : string) => invoke(GetBranches, folder);
+	const getRepository = (folder : string) : Promise<string> => invoke(OpenDirectory, folder);
+	const getBranches = (folder : string) : Promise<string[]> => invoke(GetBranches, folder);
+	const getFileChanges = (folder : string, branch : string) : Promise<FileChange[]> => invoke(GetFileChanges, folder, branch);
 	return {
 		send,
 		on,
 		invoke,
 		getRepository,
-		getBranches
+		getBranches,
+		getFileChanges
 	};
 };
