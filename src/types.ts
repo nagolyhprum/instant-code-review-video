@@ -16,4 +16,5 @@ export interface CanvasText {
 	height : number
 	character : string
 	color : string
+	background : string
 }
