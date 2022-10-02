@@ -1,14 +1,7 @@
 import * as React from "react";
-import { CanvasText, FileChange } from "../types";
+import { CanvasText, FileChange, TextNode } from "../types";
 import { ContextMenuCommand, ShowContextMenu } from "../constants";
 import { useIpcRenderer } from "./useIpcRenderer";
-
-interface TextNode {
-	text : string
-	diffs : number
-	previous?: TextNode
-	status : "added" | "removed" | "same"
-}
 
 const highlight = (characters : CanvasText[], {
 	start,
@@ -68,15 +61,51 @@ const diffChars = (oldString : string, newString : string) => {
 };
 
 const tokenRegexp = /(\s*)(\S+)/g;
-const position = (input : string, context : CanvasRenderingContext2D) => {
+const position = (input : string, fileChanges : FileChange[], context : CanvasRenderingContext2D) : {
+	lines : CanvasText[]
+	code : CanvasText[]
+	files : CanvasText[]
+} => {
+	const lineNumberWidth = 50;
 	const height = parseFloat(context.font);
-	const output : CanvasText[] = [];
-	let match = tokenRegexp.exec(input), x = 0, y = 0;
+	const margin = 5;
+	const padding = 5;
+	let lineNumber = 2;
+	let offset = 0;
+	const files : CanvasText[] = fileChanges.map((fileChange, index) => {
+		const width = context.measureText(fileChange.path).width + padding * 2;
+		const ret = {
+			padding,
+			background : index === 0 ? "gray" : "lightgray",
+			character : fileChange.path,
+			color : index === 0 ? "white" : "black",
+			height : height + padding * 2,
+			width,
+			x : offset,
+			y : 0
+		};
+		offset += width + margin / 2;
+		return ret;
+	});
+	const code : CanvasText[] = [];
+	const lines : CanvasText[] = [{
+		padding : 0,
+		background : "transparent",
+		character : "1",
+		color : "lightgray",
+		height,
+		width : lineNumberWidth,
+		x : 0,
+		y : height + padding * 2 + margin / 2
+	}];
+	let maxWidth = 0;
+	let match = tokenRegexp.exec(input), x = lineNumberWidth + margin, y = height + padding * 2 + margin / 2;
 	while(match) {		
 		const [_, spaces, token] = match;
 		spaces.split("").forEach(space => {
 			const width = context.measureText(space).width;
-			output.push({
+			code.push({
+				padding : 0,
 				x,
 				y,
 				width,
@@ -85,16 +114,29 @@ const position = (input : string, context : CanvasRenderingContext2D) => {
 				color : "transparent",
 				background : "transparent"
 			});
+			maxWidth = Math.max(maxWidth, x + width);
 			if(space === "\n") {
-				x = 0;
+				x = lineNumberWidth + margin;
 				y += height;
+				lines.push({
+					padding : 0,
+					x : 0,
+					y,
+					background : "transparent",
+					color : "lightgray",
+					character : `${lineNumber}`,
+					height,
+					width : lineNumberWidth
+				});
+				lineNumber++;
 			} else {
 				x += width;
 			}
 		});
 		token.split("").forEach(character => {
 			const width = context.measureText(character).width;
-			output.push({
+			code.push({
+				padding : 0,
 				x,
 				y,
 				width,
@@ -107,26 +149,53 @@ const position = (input : string, context : CanvasRenderingContext2D) => {
 		});
 		match = tokenRegexp.exec(input);
 	}
-	return output;
+	// vertical
+	lines.push({
+		background : "black",
+		character : "",
+		color : "",
+		height : y,
+		padding : 0,
+		width : 1,
+		x : lineNumberWidth + margin / 2,
+		y : height + padding * 2
+	});
+	// horizontal
+	lines.push({
+		background : "black",
+		character : "",
+		color : "",
+		height : 1,
+		padding : 0,
+		width : maxWidth - lineNumberWidth - margin,
+		x : lineNumberWidth + margin / 2,
+		y : height + padding * 2
+	});
+	return {
+		code,
+		lines,
+		files
+	};
 };
 
 export const App = () => {
 	// custom hooks
 	const ipcRenderer = useIpcRenderer();
 	// state
-	const [fileChanges, setFileChanges] = React.useState<FileChange[]>([]);
 	const [branches, setBranches] = React.useState<string[]>([]);
-	const [code, setCode] = React.useState("");
-	const [cursor, setCursor] = React.useState({
+	// options
+	const [folder, setFolder] = React.useState("");
+	const [branch, setBranch] = React.useState("");
+	// drawing refs
+	const canvas = React.useRef<HTMLCanvasElement>(null);
+	const code = React.useRef("");
+	const cursor = React.useRef({
 		start : 0,
 		end : 0
 	});
-	// settings
-	const [folder, setFolder] = React.useState("");
-	const [branch, setBranch] = React.useState("");
-	const [fileChange, setFileChange] = React.useState("");
-	// refs
-	const canvas = React.useRef<HTMLCanvasElement>(null);
+	const fileChanges = React.useRef<FileChange[]>([]);
+	const fileChange = React.useRef("");
+	const playbackInterval = React.useRef<NodeJS.Timer>(null);
 	// effects
 	React.useEffect(() => {
 		const callback = async () => {
@@ -138,9 +207,9 @@ export const App = () => {
 	}, [folder]);
 	React.useEffect(() => {
 		const callback = async () => {
-			const fileChanges = await ipcRenderer.getFileChanges(folder, branch);
-			setFileChanges(fileChanges);
-			setFileChange(fileChanges[0] ? fileChanges[0].path : "");
+			fileChanges.current = await ipcRenderer.getFileChanges(folder, branch);
+			fileChange.current = fileChanges.current[0] ? fileChanges.current[0].path : "";
+			code.current = fileChanges.current[0] ? fileChanges.current[0].original : "";
 		};
 		callback();
 	}, [branch]);
@@ -156,33 +225,15 @@ export const App = () => {
 		});
 	}, []);
 	React.useEffect(() => {
-		const fileChangeItem = fileChanges.find(it => it.path === fileChange);
-		if(fileChangeItem) {
-			const changes = fileChangeItem ? diffChars(fileChangeItem.original, fileChangeItem.modified) : "";
-			const code = fileChangeItem.original;
-			setCode(code);
-			const interval = setInterval(() => {
-				setCursor(cursor => {
-					const at = (cursor.start + 1) % (code.length + 1);
-					return {
-						start : at,
-						end : at
-					};
-				});
-			}, 100);
-			return () => clearInterval(interval);
-		}		
-	}, [fileChange]);
-	React.useEffect(() => {
 		const draw = () => {
 			frame = requestAnimationFrame(draw);
 			const context = canvas.current.getContext("2d");
 			context.font = "16px Courier New";
-			const characters = position(code, context);
-			highlight(characters, cursor);
-			if(characters.length) {
-				const last = characters.at(-1);
-				const width = characters.reduce((max, character) => {
+			const characters = position(code.current, fileChanges.current, context);
+			highlight(characters.code, cursor.current);
+			if(characters.code.length) {
+				const last = characters.code.at(-1);
+				const width = characters.code.reduce((max, character) => {
 					return Math.max(max, character.x + character.width);
 				}, 0);
 				const height = last.y + last.height;
@@ -191,23 +242,23 @@ export const App = () => {
 				canvas.current.style.width = `${width}px`;
 				canvas.current.style.height = `${height}px`;
 				context.font = "16px Courier New";
-				context.textAlign = "left";
+				context.textAlign = "right";
 				context.textBaseline = "top";
 				context.scale(devicePixelRatio, devicePixelRatio);
-				characters.forEach(character => {
+				characters.code.concat(characters.lines).concat(characters.files).forEach(character => {
 					context.fillStyle = character.background;
 					context.fillRect(character.x, character.y, character.width, character.height);
 					context.fillStyle = character.color;
-					context.fillText(character.character, character.x, character.y);
+					context.fillText(character.character, character.x + character.width - character.padding, character.y + character.padding);
 				});
-				if(cursor.start === cursor.end) {
+				if(cursor.current.start === cursor.current.end) {
 					const theta = 2 * Math.PI * Date.now() / 1000;
 					const progress = (Math.sin(theta) + 1) / 2;
 					context.fillStyle = `rgba(0, 0, 0, ${progress})`;
-					if(cursor.start === 0) {
-						context.fillRect(characters[0].x - 1, characters[0].y, 2, 16);
+					if(cursor.current.start === 0) {
+						context.fillRect(characters.code[0].x - 1, characters.code[0].y, 2, 16);
 					} else {
-						const character = characters[cursor.start - 1];
+						const character = characters.code[cursor.current.start - 1];
 						context.fillRect(character.x + character.width - 1, character.y, 2, 16);
 					}
 				}
@@ -215,11 +266,22 @@ export const App = () => {
 		};
 		let frame = requestAnimationFrame(draw);
 		return () => cancelAnimationFrame(frame);
-	}, [code, cursor]);
+	}, []);
 	// callbacks
 	const getRepository = React.useCallback(async () => {
 		setFolder(await ipcRenderer.getRepository(folder));
 	}, [folder]);
+	const playback = React.useCallback(() => {
+		clearTimeout(playbackInterval.current);
+		playbackInterval.current = setTimeout(() => {
+			console.log("TODO");
+			// MOVE CURSOR
+			// REMOVE CODE
+			// ADD CODE
+			// CHANGE FILES
+			// SCROLL
+		});
+	}, []);
 	return (
 		<div style={{
 			display : "flex",
@@ -235,11 +297,7 @@ export const App = () => {
 					<option key={branch}>{branch}</option>
 				))}
 			</select>
-			<select value={fileChange} onChange={event => setFileChange(event.target.value)}>
-				{fileChanges.map(fileChange => (
-					<option key={fileChange.path}>{fileChange.path}</option>
-				))}
-			</select>
+			<button onClick={playback}>Play</button>
 			<canvas ref={canvas}></canvas>
 		</div>
 	);

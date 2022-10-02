@@ -35,7 +35,8 @@ const getFileChanges = async (folder : string, branch : string) : Promise<FileCh
 				return {
 					path,
 					original,
-					modified
+					modified,
+					current : ""
 				};
 			}));
 		} catch(e) {
