@@ -3,6 +3,8 @@ import { CanvasText, FileChange, TextNode } from "../types";
 import { ContextMenuCommand, ShowContextMenu } from "../constants";
 import { useIpcRenderer } from "./useIpcRenderer";
 
+const LETTERS_PER_SECOND = 40;
+
 const highlight = (characters : CanvasText[], {
 	start,
 	end
@@ -61,7 +63,7 @@ const diffChars = (oldString : string, newString : string) => {
 };
 
 const tokenRegexp = /(\s*)(\S+)/g;
-const position = (input : string, fileChanges : FileChange[], context : CanvasRenderingContext2D) : {
+const position = (input : string, fileChanges : FileChange[], fileChange : string, context : CanvasRenderingContext2D) : {
 	lines : CanvasText[]
 	code : CanvasText[]
 	files : CanvasText[]
@@ -72,13 +74,13 @@ const position = (input : string, fileChanges : FileChange[], context : CanvasRe
 	const padding = 5;
 	let lineNumber = 2;
 	let offset = 0;
-	const files : CanvasText[] = fileChanges.map((fileChange, index) => {
-		const width = context.measureText(fileChange.path).width + padding * 2;
+	const files : CanvasText[] = fileChanges.map((fileChangeItem) => {
+		const width = context.measureText(fileChangeItem.path).width + padding * 2;
 		const ret = {
 			padding,
-			background : index === 0 ? "gray" : "lightgray",
-			character : fileChange.path,
-			color : index === 0 ? "white" : "black",
+			background : fileChangeItem.path === fileChange ? "gray" : "lightgray",
+			character : fileChangeItem.path,
+			color : fileChangeItem.path === fileChange ? "white" : "black",
 			height : height + padding * 2,
 			width,
 			x : offset,
@@ -188,10 +190,13 @@ export const App = () => {
 	const [branch, setBranch] = React.useState("");
 	// drawing refs
 	const canvas = React.useRef<HTMLCanvasElement>(null);
-	const code = React.useRef("");
 	const cursor = React.useRef({
 		start : 0,
 		end : 0
+	});
+	const scroll = React.useRef({
+		x : 0,
+		y : 0
 	});
 	const fileChanges = React.useRef<FileChange[]>([]);
 	const fileChange = React.useRef("");
@@ -209,7 +214,6 @@ export const App = () => {
 		const callback = async () => {
 			fileChanges.current = await ipcRenderer.getFileChanges(folder, branch);
 			fileChange.current = fileChanges.current[0] ? fileChanges.current[0].path : "";
-			code.current = fileChanges.current[0] ? fileChanges.current[0].original : "";
 		};
 		callback();
 	}, [branch]);
@@ -229,14 +233,13 @@ export const App = () => {
 			frame = requestAnimationFrame(draw);
 			const context = canvas.current.getContext("2d");
 			context.font = "16px Courier New";
-			const characters = position(code.current, fileChanges.current, context);
+			const fileChangeItem = fileChanges.current.find(it => it.path === fileChange.current);
+			if(!fileChangeItem) return;
+			const characters = position(fileChangeItem.current, fileChanges.current, fileChange.current, context);
 			highlight(characters.code, cursor.current);
 			if(characters.code.length) {
-				const last = characters.code.at(-1);
-				const width = characters.code.reduce((max, character) => {
-					return Math.max(max, character.x + character.width);
-				}, 0);
-				const height = last.y + last.height;
+				const width = 640;
+				const height = 480;
 				canvas.current.width = width * devicePixelRatio;
 				canvas.current.height = height * devicePixelRatio;
 				canvas.current.style.width = `${width}px`;
@@ -245,21 +248,72 @@ export const App = () => {
 				context.textAlign = "right";
 				context.textBaseline = "top";
 				context.scale(devicePixelRatio, devicePixelRatio);
-				characters.code.concat(characters.lines).concat(characters.files).forEach(character => {
+				// AUTOSCROLL
+				const cursorBounds = cursor.current.start === 0 ? characters.code[0] : characters.code[cursor.current.start - 1];
+				if(cursorBounds.y + cursorBounds.height + scroll.current.y < 0) {
+					console.log("we have to scroll up - this should not happen yet");
+				} else if(cursorBounds.y + cursorBounds.height + scroll.current.y > canvas.current.height / 2) {
+					scroll.current.y = -cursorBounds.y + cursorBounds.height / 2 + canvas.current.height / 4; 
+				}
+				if(cursorBounds.x + scroll.current.x > canvas.current.width / 2) {
+					scroll.current.x = -cursorBounds.x + canvas.current.width / 4; 
+				} else if(cursorBounds.x < canvas.current.width / 2) {
+					scroll.current.x = 0;
+				}
+				// LINES AND FILES
+				characters.files.forEach(character => {
 					context.fillStyle = character.background;
 					context.fillRect(character.x, character.y, character.width, character.height);
 					context.fillStyle = character.color;
 					context.fillText(character.character, character.x + character.width - character.padding, character.y + character.padding);
 				});
+				context.save();				
+				context.beginPath();
+				context.rect(0, characters.code[0].y, canvas.current.width, canvas.current.height);
+				context.clip();
+				characters.lines.forEach(character => {
+					context.fillStyle = character.background;
+					context.fillRect(
+						character.x, 
+						character.y + scroll.current.y, 
+						character.width, 
+						character.height
+					);
+					context.fillStyle = character.color;
+					context.fillText(
+						character.character, 
+						character.x + character.width - character.padding, 
+						character.y + character.padding + scroll.current.y
+					);
+				});
+				context.beginPath();
+				context.rect(characters.code[0].x, characters.code[0].y, canvas.current.width, canvas.current.height);
+				context.clip();
+				characters.code.forEach(character => {
+					context.fillStyle = character.background;
+					context.fillRect(
+						character.x + scroll.current.x, 
+						character.y + scroll.current.y, 
+						character.width, 
+						character.height
+					);
+					context.fillStyle = character.color;
+					context.fillText(
+						character.character, 
+						character.x + character.width - character.padding + scroll.current.x, 
+						character.y + character.padding + scroll.current.y
+					);
+				});
+				context.restore();
 				if(cursor.current.start === cursor.current.end) {
 					const theta = 2 * Math.PI * Date.now() / 1000;
 					const progress = (Math.sin(theta) + 1) / 2;
 					context.fillStyle = `rgba(0, 0, 0, ${progress})`;
 					if(cursor.current.start === 0) {
-						context.fillRect(characters.code[0].x - 1, characters.code[0].y, 2, 16);
+						context.fillRect(characters.code[0].x - 1, characters.code[0].y + scroll.current.y, 2, 16);
 					} else {
 						const character = characters.code[cursor.current.start - 1];
-						context.fillRect(character.x + character.width - 1, character.y, 2, 16);
+						context.fillRect(character.x + character.width - 1, character.y + scroll.current.y, 2, 16);
 					}
 				}
 			}
@@ -273,14 +327,70 @@ export const App = () => {
 	}, [folder]);
 	const playback = React.useCallback(() => {
 		clearTimeout(playbackInterval.current);
-		playbackInterval.current = setTimeout(() => {
-			console.log("TODO");
-			// MOVE CURSOR
-			// REMOVE CODE
-			// ADD CODE
-			// CHANGE FILES
-			// SCROLL
+		fileChanges.current.forEach(fileChange => {
+			fileChange.current = fileChange.original;
 		});
+		const next = () => {
+			const fileChangeItem = fileChanges.current.find(it => it.path === fileChange.current);
+			if(fileChangeItem) {
+				const changes = diffChars(fileChangeItem.current, fileChangeItem.modified);
+				const nextChunk = changes.findIndex(it => it.status !== "same");
+				if(nextChunk !== -1) {
+					const chunkLength = changes.slice(nextChunk).findIndex(it => it.status === "same");
+					const endChunk = chunkLength === -1 ? changes.length : chunkLength + nextChunk;
+					// REMOVE FIRST
+					let from = 0;
+					for(let i = 0; i < nextChunk; i++) {
+						from += changes[i].text.length + 1;
+					}
+					let end = from;
+					for(let i = nextChunk; i < endChunk; i++) {
+						if(changes[i].status === "removed") {
+							end += changes[i].text.length + 1;
+						}
+					}
+					cursor.current.start = from;
+					cursor.current.end = from;
+					if(from === end) { // THERE IS NOTHING TO REMOVE FOR THIS CHUNK, LETS ADD INSTEAD
+						let added = "";
+						for(let i = nextChunk; i < endChunk; i++) {
+							added += "\n" + changes[i].text;
+						}
+						for(let i = 0; i < added.length; i++) {
+							setTimeout(() => {
+								fileChangeItem.current = fileChangeItem.current.substring(0, from + i - 1) + added[i] + fileChangeItem.current.substring(from + i - 1);
+								cursor.current.start = cursor.current.end = from + i;
+							}, i * LETTERS_PER_SECOND);
+						}
+						setTimeout(() => {
+							next();
+						}, added.length * LETTERS_PER_SECOND);
+					} else { // HIGHLIGHT THEN REMOVE
+						const diff = end - from;
+						for(let i = 0; i <= diff; i++) {
+							setTimeout(() => {
+								cursor.current.end = from + i;
+							}, i * 10);
+						}						
+						setTimeout(() => {
+							fileChangeItem.current = fileChangeItem.current.substring(0, from) + fileChangeItem.current.substring(end);
+							cursor.current.end = cursor.current.start;
+							next();
+						}, (diff + 1) * 10);
+					}
+				} else {
+					const index = fileChanges.current.findIndex(it => it.path === fileChange.current);
+					if(index + 1 < fileChanges.current.length) { // CHANGE FILES
+						fileChange.current = fileChanges.current[index + 1].path;
+						scroll.current.y = 0;
+						next();
+					} else {
+						console.log("DONE");
+					}
+				}
+			}
+		};
+		next();
 	}, []);
 	return (
 		<div style={{
